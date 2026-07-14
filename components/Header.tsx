@@ -4,7 +4,7 @@ import { useTheme } from "next-themes";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Sun, Moon, BookOpen, LogOut, User as UserIcon } from "lucide-react";
+import { Sun, Moon, LogOut, User as UserIcon } from "lucide-react";
 
 interface HeaderProps {
   user: {
@@ -49,9 +49,6 @@ export default function Header({ user }: HeaderProps) {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2 group">
-          <div className="p-2 bg-primary/10 rounded-lg text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-all duration-300">
-            <BookOpen className="w-6 h-6" />
-          </div>
           <span className="font-extrabold text-xl tracking-tight text-foreground">
             Story<span className="text-primary">Forge</span>
           </span>

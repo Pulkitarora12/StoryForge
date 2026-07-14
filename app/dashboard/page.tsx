@@ -2,7 +2,6 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import DashboardGrid from "@/components/DashboardGrid";
-import { BookOpen } from "lucide-react";
 
 export const metadata = {
   title: "Dashboard - StoryForge",
@@ -39,7 +38,6 @@ export default async function DashboardPage() {
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 w-full flex-grow flex flex-col">
       {/* Greetings */}
       <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 text-primary border border-primary/20 text-xs font-semibold max-w-fit mb-4">
-        <BookOpen className="w-3.5 h-3.5" />
         Welcome, {session.name || session.email.split("@")[0]}
       </div>
       

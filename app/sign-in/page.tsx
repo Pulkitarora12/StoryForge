@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import React, { useState } from "react";
-import { Sparkles, KeyRound, Mail, AlertCircle, Loader2 } from "lucide-react";
+import { KeyRound, Mail, AlertCircle, Loader2 } from "lucide-react";
 
 export default function SignInPage() {
   const router = useRouter();
@@ -51,9 +51,6 @@ export default function SignInPage() {
     <div className="flex-grow flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md w-full space-y-8 glass p-8 rounded-2xl border border-border shadow-xl">
         <div className="text-center space-y-2">
-          <div className="inline-flex p-3 bg-primary/10 rounded-2xl text-primary mb-2">
-            <Sparkles className="w-8 h-8" />
-          </div>
           <h2 className="text-3xl font-extrabold text-foreground">Welcome Back</h2>
           <p className="text-sm text-muted-foreground">
             Sign in to start creating magic with StoryForge

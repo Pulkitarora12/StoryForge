@@ -13,37 +13,29 @@ const AGE_CONFIGS: Record<string, {
   toneRule: string;
   themesRule: string;
 }> = {
-  toddler: {
-    description: "toddler (2-3 years old)",
-    sentenceRule: "Use very simple, short sentences (maximum 4-6 words).",
-    vocabRule: "Use basic, familiar words. Avoid complex or abstract terms.",
-    wordCountRule: "Keep content under 15-20 words per page.",
-    toneRule: "A gentle, playful, repetitive, and extremely comforting tone.",
-    themesRule: "Focus on discovery, daily routines, friendly animals, and basic shapes/colors."
+  children: {
+    description: "children (ages 3-12)",
+    sentenceRule: "Use clean, direct, and engaging sentence structures suitable for children.",
+    vocabRule: "Use accessible vocabulary with descriptive adjectives. Introduce colorful terms contextually.",
+    wordCountRule: "Every page MUST contain at least 60 words.",
+    toneRule: "Playful, imaginative, and encouraging.",
+    themesRule: "Focus on friendship, discovery, adventure, fun problems, and magic."
   },
-  preschool: {
-    description: "preschool (4-6 years old)",
-    sentenceRule: "Use simple sentences (maximum 6-10 words) with active verbs.",
-    vocabRule: "Use simple vocabulary but introduce 1-2 new descriptive words per page with clear context.",
-    wordCountRule: "Keep content around 20-30 words per page.",
-    toneRule: "Curious, exciting, and highly interactive, engaging the child directly.",
-    themesRule: "Focus on friendship, simple problem solving, sharing, emotions, and adventure."
+  teenagers: {
+    description: "teenagers (ages 13-19)",
+    sentenceRule: "Use expressive, varied, and modern sentence structures.",
+    vocabRule: "Use rich, descriptive vocabulary, contemporary terms, and idioms suitable for adolescents.",
+    wordCountRule: "Every page MUST contain at least 80 words.",
+    toneRule: "Immersive, expressive, dramatic, and emotionally resonant.",
+    themesRule: "Focus on identity, personal growth, relationships, mystery, choice, and journey."
   },
-  "early-reader": {
-    description: "early reader (7-9 years old)",
-    sentenceRule: "Use short to medium sentences (10-15 words). Include some compound sentences.",
-    vocabRule: "Use sight words and decodable words. Include engaging adjectives and action verbs.",
-    wordCountRule: "Keep content around 35-50 words per page.",
-    toneRule: "Adventurous, encouraging, and storytelling-driven.",
-    themesRule: "Focus on cooperative problem solving, fantasy, family relationships, and resilience."
-  },
-  "middle-grade": {
-    description: "middle grade (10-12 years old)",
-    sentenceRule: "Use varied sentence structures (12-20 words) with both simple and complex patterns.",
-    vocabRule: "Use rich, descriptive vocabulary, idioms, and metaphors suitable for developing readers.",
-    wordCountRule: "Keep content around 60-80 words per page.",
-    toneRule: "Immersive, expressive, and slightly more sophisticated, but still warm and accessible.",
-    themesRule: "Focus on identity, complex decisions, mystery, deeper emotional journeys, and teamwork."
+  "above-that": {
+    description: "general audience and adults (ages 20+)",
+    sentenceRule: "Use complex, sophisticated, and polished prose structures.",
+    vocabRule: "Use advanced, nuanced, literary vocabulary and rich metaphors.",
+    wordCountRule: "Every page MUST contain at least 100 words.",
+    toneRule: "Stylized, deep, engaging, and mature.",
+    themesRule: "Focus on philosophical questions, complex moral decisions, deep emotional journeys, and rich lore."
   }
 };
 
@@ -128,22 +120,26 @@ export async function POST(request: Request) {
     );
 
     // Download the uploaded media and convert to base64 for Gemini vision input
-    let mediaPart: any;
+    let mediaParts: any[] = [];
     try {
-      const mediaResponse = await fetch(sourceMediaUrl);
-      if (!mediaResponse.ok) {
-        throw new Error(`Failed to fetch media from Cloudinary: ${mediaResponse.statusText}`);
-      }
-      const arrayBuffer = await mediaResponse.arrayBuffer();
-      const base64Data = Buffer.from(arrayBuffer).toString("base64");
-      const contentType = mediaResponse.headers.get("content-type") || "image/jpeg";
-      
-      mediaPart = {
-        inlineData: {
-          data: base64Data,
-          mimeType: contentType,
-        },
-      };
+      const urls = Array.isArray(sourceMediaUrl) ? sourceMediaUrl : [sourceMediaUrl];
+      mediaParts = await Promise.all(
+        urls.map(async (url) => {
+          const mediaResponse = await fetch(url);
+          if (!mediaResponse.ok) {
+            throw new Error(`Failed to fetch media from Cloudinary: ${mediaResponse.statusText}`);
+          }
+          const arrayBuffer = await mediaResponse.arrayBuffer();
+          const base64Data = Buffer.from(arrayBuffer).toString("base64");
+          const contentType = mediaResponse.headers.get("content-type") || "image/jpeg";
+          return {
+            inlineData: {
+              data: base64Data,
+              mimeType: contentType,
+            },
+          };
+        })
+      );
     } catch (mediaError) {
       console.error("Failed downloading/processing media:", mediaError);
       return NextResponse.json(
@@ -180,6 +176,7 @@ Important Writing Instructions:
 2. You must output exactly 10 pages in the array.
 3. Each page must contain story content as basic, clean HTML (e.g. use paragraphs <p>story text</p>, with optional inline formatting like <strong> or <em>).
 4. Each page must also have a "sceneDescription" that details what is visually happening on that page. This scene description should be suitable for illustrating the page.
+5. CRITICAL: Every single page MUST contain at least 60 words of story content. Write full, detailed descriptive paragraphs to ensure the narrative is rich and meets the 60-word minimum per page. Do not make it too brief.
 
 You MUST respond strictly with a single JSON object matching this structure (no markdown formatting, no comments, no backticks outside the JSON structure):
 {
@@ -203,7 +200,7 @@ You MUST respond strictly with a single JSON object matching this structure (no 
     // Fetch response with exponential backoff retry mechanism
     let responseText: string;
     try {
-      responseText = await generateWithRetry(model, [promptText, mediaPart]);
+      responseText = await generateWithRetry(model, [promptText, ...mediaParts]);
     } catch (geminiError: any) {
       console.error("Gemini API call failed after retries:", geminiError);
       return NextResponse.json(
@@ -240,7 +237,8 @@ You MUST respond strictly with a single JSON object matching this structure (no 
     }
 
     // Setup media cycling/distribution logic across 10 pages
-    const mediaUrls = [sourceMediaUrl]; // Support future multiple uploads; default is just our source image
+    const mediaUrls = Array.isArray(sourceMediaUrl) ? sourceMediaUrl : [sourceMediaUrl];
+    const sourceUrlString = mediaUrls[0] || "";
     
     // Save Story and StoryPages inside a database transaction
     const story = await prisma.$transaction(async (tx) => {
@@ -249,7 +247,7 @@ You MUST respond strictly with a single JSON object matching this structure (no 
           userId: session.userId,
           title: storyData.title || title || "Untitled Story",
           contextPrompt: prompt,
-          sourceMediaUrl,
+          sourceMediaUrl: sourceUrlString,
           sourceMediaType: sourceMediaType as "IMAGE" | "ANIMATION",
           status: "COMPLETED",
           ageGroup,
@@ -269,15 +267,19 @@ You MUST respond strictly with a single JSON object matching this structure (no 
         },
       });
 
-      // Save to Media table as well to track uploads
-      await tx.media.create({
-        data: {
-          userId: session.userId,
-          url: sourceMediaUrl,
-          type: sourceMediaType as "IMAGE" | "ANIMATION",
-          cloudinaryPublicId: sourceMediaUrl.split("/").pop()?.split(".")[0] || "unknown",
-        },
-      });
+      // Save all to Media table as well to track uploads
+      await Promise.all(
+        mediaUrls.map((url) =>
+          tx.media.create({
+            data: {
+              userId: session.userId,
+              url,
+              type: sourceMediaType as "IMAGE" | "ANIMATION",
+              cloudinaryPublicId: url.split("/").pop()?.split(".")[0] || "unknown",
+            },
+          })
+        )
+      );
 
       return createdStory;
     });

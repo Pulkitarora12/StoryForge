@@ -19,10 +19,9 @@ interface DashboardGridProps {
 }
 
 const AGE_LABELS: Record<string, string> = {
-  toddler: "Toddler (2-3)",
-  preschool: "Preschool (4-6)",
-  "early-reader": "Early Reader (7-9)",
-  "middle-grade": "Middle Grade (10-12)",
+  children: "Children",
+  teenagers: "Teenagers",
+  "above-that": "Above That",
 };
 
 export default function DashboardGrid({ initialStories }: DashboardGridProps) {
@@ -86,7 +85,7 @@ export default function DashboardGrid({ initialStories }: DashboardGridProps) {
         </div>
         <Link
           href="/stories/new"
-          className="inline-flex items-center gap-1.5 px-4.5 py-2.5 rounded-xl bg-primary text-primary-foreground font-bold hover:bg-primary/90 hover:scale-105 active:scale-95 transition-all duration-200 shadow-md shadow-primary/10 text-sm"
+          className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground font-bold hover:bg-primary/90 hover:scale-105 active:scale-95 transition-all duration-200 shadow-md text-sm"
         >
           <Plus className="w-4 h-4" />
           New Story

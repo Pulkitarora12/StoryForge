@@ -9,7 +9,6 @@ import {
   Edit,
   Save,
   X,
-  Sparkles,
   BookOpen,
   Image as ImageIcon,
   Loader2,
@@ -210,7 +209,6 @@ export default function StoryViewer({ initialStory }: StoryViewerProps) {
         <div className="flex flex-col justify-between space-y-6">
           <div className="flex-grow space-y-4">
             <h3 className="text-xs font-extrabold uppercase text-primary tracking-widest flex items-center gap-1">
-              <Sparkles className="w-3.5 h-3.5 text-primary" />
               Story Content
             </h3>
             

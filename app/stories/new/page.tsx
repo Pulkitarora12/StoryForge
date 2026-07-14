@@ -3,7 +3,6 @@
 import { useRouter } from "next/navigation";
 import React, { useState, useEffect, useRef } from "react";
 import {
-  Sparkles,
   ArrowRight,
   ArrowLeft,
   UploadCloud,
@@ -14,6 +13,7 @@ import {
   FileCode,
   Image as ImageIcon,
   Film,
+  Trash2,
 } from "lucide-react";
 
 const LOADING_MESSAGES = [
@@ -32,11 +32,11 @@ export default function NewStoryPage() {
   const [step, setStep] = useState(1);
   const [title, setTitle] = useState("");
   const [prompt, setPrompt] = useState("");
-  const [ageGroup, setAgeGroup] = useState("preschool");
+  const [ageGroup, setAgeGroup] = useState("children");
   
   // Media states
-  const [mediaFile, setMediaFile] = useState<File | null>(null);
-  const [mediaUrl, setMediaUrl] = useState<string | null>(null);
+  const [mediaFiles, setMediaFiles] = useState<File[]>([]);
+  const [mediaUrls, setMediaUrls] = useState<string[]>([]);
   const [mediaType, setMediaType] = useState<"IMAGE" | "ANIMATION">("IMAGE");
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -63,24 +63,36 @@ export default function NewStoryPage() {
 
   // Handle file select
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setMediaFile(file);
-      setMediaUrl(null); // Reset URL on new file select
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      const selectedList = Array.from(files);
+      setMediaFiles((prev) => [...prev, ...selectedList]);
+      setMediaUrls([]); // reset uploaded urls on new additions
       setUploadProgress(0);
     }
   };
 
-  // Perform direct signed Cloudinary upload
-  const uploadToCloudinary = async () => {
-    if (!mediaFile) return null;
+  // Remove individual file from upload list
+  const removeFile = (idxToRemove: number) => {
+    setMediaFiles((prev) => prev.filter((_, idx) => idx !== idxToRemove));
+    setMediaUrls([]);
+    setUploadProgress(0);
+    setError(null);
+  };
+
+  // Perform direct signed Cloudinary upload for multiple files
+  const uploadAllToCloudinary = async () => {
+    if (mediaFiles.length === 0) return null;
     
     setUploading(true);
     setUploadProgress(10);
     setError(null);
 
+    const urls: string[] = [];
+    const types: string[] = [];
+
     try {
-      // 1. Get signed upload signature from backend
+      // 1. Get signed upload signature from backend once
       const signatureResponse = await fetch("/api/upload/signature", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -91,38 +103,44 @@ export default function NewStoryPage() {
       }
 
       const sigData = await signatureResponse.json();
-      setUploadProgress(30);
+      setUploadProgress(20);
 
-      // 2. Perform upload
-      const formData = new FormData();
-      formData.append("file", mediaFile);
-      formData.append("api_key", sigData.apiKey);
-      formData.append("timestamp", sigData.timestamp.toString());
-      formData.append("signature", sigData.signature);
-      formData.append("folder", sigData.folder);
+      // 2. Upload each file sequentially
+      for (let i = 0; i < mediaFiles.length; i++) {
+        const file = mediaFiles[i];
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("api_key", sigData.apiKey);
+        formData.append("timestamp", sigData.timestamp.toString());
+        formData.append("signature", sigData.signature);
+        formData.append("folder", sigData.folder);
 
-      const isVideo = mediaFile.type.startsWith("video/") || mediaFile.name.endsWith(".mp4");
-      const resourceType = isVideo ? "video" : "image";
-      setMediaType(isVideo ? "ANIMATION" : "IMAGE");
+        const isVideo = file.type.startsWith("video/") || file.name.endsWith(".mp4");
+        const resourceType = isVideo ? "video" : "image";
+        
+        const uploadUrl = `https://api.cloudinary.com/v1_1/${sigData.cloudName}/${resourceType}/upload`;
+        const uploadResponse = await fetch(uploadUrl, {
+          method: "POST",
+          body: formData,
+        });
 
-      setUploadProgress(50);
+        if (!uploadResponse.ok) {
+          throw new Error(`Failed uploading file "${file.name}" to Cloudinary.`);
+        }
 
-      const uploadUrl = `https://api.cloudinary.com/v1_1/${sigData.cloudName}/${resourceType}/upload`;
-      const uploadResponse = await fetch(uploadUrl, {
-        method: "POST",
-        body: formData,
-      });
+        const uploadData = await uploadResponse.json();
+        urls.push(uploadData.secure_url);
+        types.push(isVideo ? "ANIMATION" : "IMAGE");
 
-      if (!uploadResponse.ok) {
-        const errorText = await uploadResponse.text();
-        console.error("Cloudinary upload failure details:", errorText);
-        throw new Error("Failed uploading media directly to Cloudinary storage.");
+        const percent = 20 + Math.round((80 * (i + 1)) / mediaFiles.length);
+        setUploadProgress(percent);
       }
 
-      const uploadData = await uploadResponse.json();
-      setUploadProgress(100);
-      setMediaUrl(uploadData.secure_url);
-      return uploadData.secure_url;
+      setMediaUrls(urls);
+      const finalType = types.includes("ANIMATION") ? "ANIMATION" : "IMAGE";
+      setMediaType(finalType);
+
+      return urls;
     } catch (err: any) {
       console.error(err);
       setError(err.message || "An error occurred during file upload.");
@@ -134,25 +152,25 @@ export default function NewStoryPage() {
 
   // Run next step or trigger upload
   const handleStep2Next = async () => {
-    if (!mediaFile) {
-      setError("Please select a file to upload.");
+    if (mediaFiles.length === 0) {
+      setError("Please select at least one file to upload.");
       return;
     }
 
-    if (mediaUrl) {
+    if (mediaUrls.length > 0) {
       setStep(3);
       return;
     }
 
-    const uploadedUrl = await uploadToCloudinary();
-    if (uploadedUrl) {
+    const uploadedUrls = await uploadAllToCloudinary();
+    if (uploadedUrls && uploadedUrls.length > 0) {
       setStep(3);
     }
   };
 
   // Submit final generation prompt
   const handleGenerate = async () => {
-    if (!title || !prompt || !mediaUrl) {
+    if (!title || !prompt || mediaUrls.length === 0) {
       setError("Missing key parameters. Please check your inputs.");
       return;
     }
@@ -169,7 +187,7 @@ export default function NewStoryPage() {
           title,
           prompt,
           ageGroup,
-          sourceMediaUrl: mediaUrl,
+          sourceMediaUrl: mediaUrls, // pass array of URLs
           sourceMediaType: mediaType,
           preContext,
         }),
@@ -198,7 +216,6 @@ export default function NewStoryPage() {
           <div className="space-y-8 text-center max-w-md">
             <div className="relative inline-flex items-center justify-center">
               <div className="w-24 h-24 rounded-full border-4 border-primary/20 border-t-primary animate-spin" />
-              <Sparkles className="w-8 h-8 text-primary absolute animate-pulse" />
             </div>
             <div className="space-y-3">
               <h2 className="text-2xl font-bold tracking-tight">Forging Storybook...</h2>
@@ -286,13 +303,12 @@ export default function NewStoryPage() {
             </div>
 
             <div className="space-y-2">
-              <label className="block text-sm font-semibold">Target Age Group Level</label>
-              <div className="grid grid-cols-2 gap-4">
+              <label className="block text-sm font-semibold">Target Level</label>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 {[
-                  { id: "toddler", label: "Toddler (2-3)", desc: "Simple sentences, familiar vocabulary" },
-                  { id: "preschool", label: "Preschool (4-6)", desc: "Active verbs, engaging lessons" },
-                  { id: "early-reader", label: "Early Reader (7-9)", desc: "Complex plots, sight words" },
-                  { id: "middle-grade", label: "Middle Grade (10-12)", desc: "Rich vocabulary, idioms, emotional growth" },
+                  { id: "children", label: "Children", desc: "Ages 3-12. Simple vocabulary, engaging narratives." },
+                  { id: "teenagers", label: "Teenagers", desc: "Ages 13-19. Complex plots, rich dialogue, and mature themes." },
+                  { id: "above-that", label: "Above That", desc: "Ages 20+. Sophisticated themes, nuanced characters, and literary vocabulary." },
                 ].map((tier) => (
                   <button
                     key={tier.id}
@@ -344,7 +360,7 @@ export default function NewStoryPage() {
             {/* Upload Zone */}
             <div
               onClick={() => fileInputRef.current?.click()}
-              className="border-2 border-dashed border-border hover:border-primary/50 bg-background/30 hover:bg-background/50 rounded-2xl p-10 flex flex-col items-center justify-center cursor-pointer transition-all duration-300 relative group min-h-[220px]"
+              className="border-2 border-dashed border-border hover:border-primary/50 bg-background/30 hover:bg-background/50 rounded-2xl p-8 flex flex-col items-center justify-center cursor-pointer transition-all duration-300 relative group min-h-[160px]"
             >
               <input
                 type="file"
@@ -352,46 +368,27 @@ export default function NewStoryPage() {
                 onChange={handleFileChange}
                 accept="image/*,video/*"
                 className="hidden"
+                multiple
               />
 
-              {mediaFile ? (
-                <div className="space-y-4 text-center">
-                  <div className="inline-flex p-3 bg-primary/10 rounded-2xl text-primary">
-                    {mediaFile.type.startsWith("video/") ? (
-                      <Film className="w-8 h-8" />
-                    ) : (
-                      <ImageIcon className="w-8 h-8" />
-                    )}
-                  </div>
-                  <div>
-                    <p className="text-sm font-bold text-foreground line-clamp-1">
-                      {mediaFile.name}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {(mediaFile.size / (1024 * 1024)).toFixed(2)} MB
-                    </p>
-                  </div>
+              <div className="space-y-4 text-center">
+                <div className="inline-flex p-3 bg-muted rounded-2xl text-muted-foreground group-hover:scale-105 transition-transform duration-200">
+                  <UploadCloud className="w-6 h-6" />
                 </div>
-              ) : (
-                <div className="space-y-4 text-center">
-                  <div className="inline-flex p-4 bg-muted rounded-2xl text-muted-foreground group-hover:scale-105 transition-transform duration-200">
-                    <UploadCloud className="w-8 h-8" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-bold text-foreground">
-                      Click to choose image or video
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      PNG, JPG, WEBP, GIF, or MP4
-                    </p>
-                  </div>
+                <div>
+                  <p className="text-sm font-bold text-foreground">
+                    Click to choose one or more images/videos
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    PNG, JPG, WEBP, GIF, or MP4
+                  </p>
                 </div>
-              )}
+              </div>
 
               {uploading && (
                 <div className="absolute inset-0 bg-background/80 flex flex-col items-center justify-center rounded-2xl p-6">
                   <Loader2 className="w-8 h-8 text-primary animate-spin mb-3" />
-                  <p className="text-sm font-bold">Uploading directly to Cloudinary...</p>
+                  <p className="text-sm font-bold">Uploading files directly to Cloudinary...</p>
                   <div className="w-48 bg-muted h-2 rounded-full overflow-hidden mt-2">
                     <div
                       className="bg-primary h-full transition-all duration-300"
@@ -402,19 +399,65 @@ export default function NewStoryPage() {
               )}
             </div>
 
+            {/* Selected Files List */}
+            {mediaFiles.length > 0 && (
+              <div className="space-y-3">
+                <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                  Selected Files ({mediaFiles.length})
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {mediaFiles.map((file, idx) => (
+                    <div key={idx} className="flex items-center justify-between p-3 rounded-xl bg-secondary/35 border border-border">
+                      <div className="flex items-center gap-2.5 overflow-hidden">
+                        <div className="p-2 bg-primary/10 rounded-lg text-primary flex-shrink-0">
+                          {file.type.startsWith("video/") ? (
+                            <Film className="w-4 h-4" />
+                          ) : (
+                            <ImageIcon className="w-4 h-4" />
+                          )}
+                        </div>
+                        <div className="overflow-hidden">
+                          <p className="text-xs font-bold text-foreground truncate max-w-[160px]">{file.name}</p>
+                          <p className="text-[10px] text-muted-foreground">{(file.size / (1024 * 1024)).toFixed(2)} MB</p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeFile(idx);
+                        }}
+                        disabled={uploading}
+                        className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors disabled:opacity-50"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Preview of Uploaded Media */}
-            {mediaUrl && (
-              <div className="p-4 rounded-xl bg-secondary/50 border border-border flex flex-col items-center gap-3">
+            {mediaUrls.length > 0 && (
+              <div className="p-4 rounded-xl bg-secondary/50 border border-border flex flex-col gap-3">
                 <span className="text-xs font-bold text-emerald-500 flex items-center gap-1">
                   <CheckCircle className="w-3.5 h-3.5" />
-                  Uploaded Successfully
+                  All Files Uploaded ({mediaUrls.length})
                 </span>
-                <div className="relative w-40 aspect-square rounded-lg overflow-hidden border border-border bg-black">
-                  {mediaType === "ANIMATION" ? (
-                    <video src={mediaUrl} className="w-full h-full object-cover" muted loop autoPlay playsInline />
-                  ) : (
-                    <img src={mediaUrl} alt="Protagonist Preview" className="w-full h-full object-cover" />
-                  )}
+                <div className="flex flex-wrap gap-3">
+                  {mediaUrls.map((url, idx) => {
+                    const isAnim = url.endsWith(".mp4") || mediaFiles[idx]?.type.startsWith("video/");
+                    return (
+                      <div key={idx} className="relative w-20 aspect-square rounded-lg overflow-hidden border border-border bg-black">
+                        {isAnim ? (
+                          <video src={url} className="w-full h-full object-cover" muted loop autoPlay playsInline />
+                        ) : (
+                          <img src={url} alt={`Preview ${idx + 1}`} className="w-full h-full object-cover" />
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -432,10 +475,10 @@ export default function NewStoryPage() {
               <button
                 type="button"
                 onClick={handleStep2Next}
-                disabled={!mediaFile || uploading}
+                disabled={mediaFiles.length === 0 || uploading}
                 className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-primary text-primary-foreground font-bold hover:bg-primary/90 transition-all text-sm shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {uploading ? "Uploading..." : mediaUrl ? "Next Step" : "Upload & Continue"}
+                {uploading ? "Uploading..." : mediaUrls.length > 0 ? "Next Step" : "Upload & Continue"}
                 <ArrowRight className="w-4 h-4" />
               </button>
             </div>
@@ -486,7 +529,6 @@ export default function NewStoryPage() {
                 onClick={handleGenerate}
                 className="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl bg-primary text-primary-foreground font-extrabold hover:bg-primary/90 transition-all text-sm shadow-lg shadow-primary/10"
               >
-                <Sparkles className="w-4 h-4" />
                 Generate Storybook
               </button>
             </div>
