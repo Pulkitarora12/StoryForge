@@ -52,8 +52,8 @@ export default function Header({ user }: HeaderProps) {
           <div className="p-2 bg-primary/10 rounded-lg text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-all duration-300">
             <BookOpen className="w-6 h-6" />
           </div>
-          <span className="font-extrabold text-xl tracking-tight bg-gradient-to-r from-primary to-pink-500 bg-clip-text text-transparent">
-            StoryForge
+          <span className="font-extrabold text-xl tracking-tight text-foreground">
+            Story<span className="text-primary">Forge</span>
           </span>
         </Link>
 
